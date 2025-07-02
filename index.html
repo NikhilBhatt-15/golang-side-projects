@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Request Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            background: linear-gradient(45deg, #ee5a52, #ff6b6b);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response-container {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            min-height: 100px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .response-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+        
+        .response-content {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-success { background-color: #4ade80; }
+        .status-error { background-color: #f87171; }
+        .status-loading { background-color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>� Server-Sent Events Demo</h1>
+        
+        <div class="button-group">
+            <button onclick="startEventStream()">Start Event Stream</button>
+            <button onclick="stopEventStream()">Stop Stream</button>
+            <button onclick="clearResponse()">Clear Response</button>
+            <button onclick="testReconnection()">Test Reconnection</button>
+        </div>
+        
+        <div class="response-container">
+            <div class="response-title">
+                <span id="statusIndicator" class="status-indicator"></span>
+                Event Stream Data:
+            </div>
+            <div id="responseContent" class="response-content">
+                Click "Start Event Stream" to begin receiving data from /events endpoint!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const responseContent = document.getElementById('responseContent');
+        const statusIndicator = document.getElementById('statusIndicator');
+        let eventSource = null;
+        let receivedData = [];
+        let reconnectCount = 0;
+        let lastEventId = null;
+        
+        function setStatus(status) {
+            statusIndicator.className = `status-indicator status-${status}`;
+        }
+        
+        function setLoading() {
+            setStatus('loading');
+            responseContent.innerHTML = '<div class="loading"></div> Connecting to event stream...';
+        }
+        
+        function appendData(data, eventId = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            receivedData.push({
+                timestamp: timestamp,
+                data: data,
+                eventId: eventId
+            });
+            
+            // Display the accumulated data with event IDs
+            const formattedData = receivedData.map(item => 
+                `[${item.timestamp}] ${item.eventId ? `(${item.eventId}) ` : ''}${item.data}`
+            ).join('\n');
+            
+            responseContent.textContent = formattedData;
+            
+            // Auto-scroll to bottom
+            responseContent.scrollTop = responseContent.scrollHeight;
+        }
+        
+        function startEventStream() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            receivedData = [];
+            reconnectCount = 0;
+            setLoading();
+            
+            createEventSource();
+        }
+        
+        function createEventSource() {
+            try {
+                // Connect to your Go server on port 8000
+                eventSource = new EventSource('http://localhost:8000/events');
+                
+                eventSource.onopen = function() {
+                    console.log('EventSource connection opened');
+                    setStatus('success');
+                    if (reconnectCount > 0) {
+                        appendData(`--- Reconnected (attempt ${reconnectCount}) ---`);
+                    } else {
+                        appendData('--- Connected! Waiting for data... ---');
+                    }
+                };
+                
+                eventSource.onmessage = function(event) {
+                    console.log('Received data:', event.data, 'ID:', event.lastEventId);
+                    setStatus('success');
+                    lastEventId = event.lastEventId;
+                    appendData(event.data, event.lastEventId);
+                };
+                
+                eventSource.onerror = function(error) {
+                    console.error('EventSource error:', error);
+                    reconnectCount++;
+                    
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        setStatus('error');
+                        appendData(`--- Connection closed after ${reconnectCount} attempts ---`);
+                    } else {
+                        setStatus('loading');
+                        appendData(`--- Connection lost, reconnecting... (attempt ${reconnectCount}) ---`);
+                    }
+                };
+                
+            } catch (error) {
+                console.error('Error creating EventSource:', error);
+                setStatus('error');
+                responseContent.textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        function stopEventStream() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                setStatus('');
+                statusIndicator.className = 'status-indicator';
+                appendData('\n--- Stream stopped manually ---');
+            }
+        }
+        
+        function clearResponse() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            receivedData = [];
+            reconnectCount = 0;
+            lastEventId = null;
+            setStatus('');
+            statusIndicator.className = 'status-indicator';
+            responseContent.textContent = 'Response cleared. Click "Start Event Stream" to begin!';
+        }
+        
+        function testReconnection() {
+            if (!eventSource) {
+                appendData('--- Start a stream first! ---');
+                return;
+            }
+            
+            appendData('--- Testing reconnection: Closing connection... ---');
+            eventSource.close();
+            
+            setTimeout(() => {
+                appendData('--- Attempting to reconnect... ---');
+                createEventSource();
+            }, 1000);
+        }
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case '1':
+                        e.preventDefault();
+                        startEventStream();
+                        break;
+                    case '2':
+                        e.preventDefault();
+                        stopEventStream();
+                        break;
+                    case '3':
+                        e.preventDefault();
+                        testReconnection();
+                        break;
+                    case 'c':
+                        e.preventDefault();
+                        clearResponse();
+                        break;
+                }
+            }
+        });
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

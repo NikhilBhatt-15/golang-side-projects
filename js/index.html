@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>debounce search</title>
+</head>
+<body>
+    <h1>Debounced search</h1>
+    <br/>
+    <input type="text" id ="search" >
+    <br/>
+    <p id="output"></p>
+</body>
+<script>
+    function debouncer(fn,delay){
+        let timer;
+
+        return function(...args){
+            clearTimeout(timer)
+            timer = setTimeout(()=>{
+                fn(...args)
+            },delay)
+        }
+    }
+    const input = document.getElementById("search")
+    const output = document.getElementById("output")
+    const search=(inp)=>{
+        const p =document.createElement("p")
+        p.innerText =`searching for "${inp}"`
+        
+        output.appendChild(p)
+    }
+    const debouncedSearch = debouncer(search,500)
+    input.addEventListener("input",(e)=>{
+        debouncedSearch(e.target.value)
+    })
+</script>
+</html>
